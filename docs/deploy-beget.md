@@ -1,81 +1,192 @@
-# Deploying to Beget (shared hosting)
+# Deploying to Beget (rf-st.ru)
 
-Step-by-step for shipping this Laravel 11 + Filament 3 app to a Beget shared-hosting account. Everything runs via SSH + Beget's control panel. No Node.js is needed on the server — `public/build` is committed so Vite assets ship with the repo.
+Step-by-step for shipping this Laravel 11 + Filament 3 app to the Beget shared-hosting account hosting **rf-st.ru**. Everything runs via SSH + the Beget control panel. No Node.js runs on the server — `public/build` is committed so Vite assets ship with the repo.
 
-## Prerequisites — in the Beget control panel
+## Beget folder layout
 
-1. **PHP version**: set the site to **PHP 8.2 (or 8.3)** under *Сайты → [site] → PHP*. Extensions to enable: `bcmath`, `ctype`, `curl`, `dom`, `fileinfo`, `gd` (with WebP), `intl`, `mbstring`, `openssl`, `pdo_mysql`, `tokenizer`, `xml`, `zip`.
-2. **MySQL DB**: *MySQL → Создать базу*. Note the DB name, user, password, host (usually `127.0.0.1` or `localhost`).
-3. **Domain → document root**: point the domain at `~/public_html/<site>/public` — NOT the Laravel root. Beget's panel: *Сайты → [site] → Корневая директория → `/public_html/<site>/public`*. If Beget forbids a non-top-level public folder, use the **symlink workaround** at the bottom of this guide.
-4. **Mailbox**: *Почта → Создать ящик* → `no-reply@<your-domain>`. Copy the SMTP password.
-5. **SSH**: *Доступ → SSH* → enable it (paid plans). Upload your public key.
+Beget auto-creates a site folder whose name matches the domain:
 
-## First deploy (run on Beget via SSH)
+```
+~/rf-st.ru/                   ← site root (Laravel code lives here)
+~/rf-st.ru/public_html/       ← auto-created web root (we replace it with a symlink to /public)
+```
 
-Replace `<site>` with your folder and `<repo>` with `https://github.com/unklex/rfst_new.git`.
+The web server serves `~/rf-st.ru/public_html/` by default. Laravel insists on `public/` being the doc root, so we point `public_html` at `public` with a symlink. Zero Beget-support-ticket required.
+
+## One-time panel setup
+
+1. **Домен уже создан** (Beget panel → *Сайты → rf-st.ru*).
+2. **PHP version**: *Сайты → rf-st.ru → PHP* → **8.2** or **8.3**.
+   Required extensions (tick all): `bcmath`, `ctype`, `curl`, `dom`, `fileinfo`, `gd` (с WebP), `intl`, `mbstring`, `openssl`, `pdo_mysql`, `tokenizer`, `xml`, `zip`.
+3. **MySQL**: *MySQL → Создать базу* → name it e.g. `crypton` with a dedicated user. Beget gives you DB host (usually `localhost`), DB name, user, password.
+4. **SMTP mailbox**: *Почта → Создать ящик* → `no-reply@rf-st.ru`. Copy the password.
+5. **SSH**: *Доступ → SSH* → turn it on, upload your public key.
+
+## First deploy (run via SSH as the Beget account user)
+
+### 1. Replace the auto-generated `public_html/` with the Laravel source
+
+Beget drops a placeholder `index.html` into `~/rf-st.ru/public_html/`. We wipe the whole folder and clone the repo directly into `~/rf-st.ru/`.
 
 ```bash
-# 1. Clone the repo into the site folder
+ssh <user>@<beget-ssh-host>
 cd ~
-rm -rf public_html/<site>
-git clone <repo> public_html/<site>
-cd public_html/<site>
 
-# 2. Install PHP deps (no dev packages, optimized autoloader)
+# Back up whatever Beget created (optional safety net — remove after you're sure)
+mv rf-st.ru rf-st.ru.backup
+
+# Clone the repo into the domain folder
+git clone https://github.com/unklex/rfst_new.git rf-st.ru
+cd rf-st.ru
+
+# Point Beget's expected public_html at Laravel's /public
+ln -s public public_html
+ls -la | grep public_html
+# → lrwxrwxrwx ... public_html -> public
+```
+
+If `rf-st.ru` already contains stuff you want to keep, use the in-place `git init` flow instead:
+
+```bash
+cd ~/rf-st.ru
+rm -rf public_html
+rm -f index.html .htaccess          # remove Beget placeholders
+git init -b main
+git remote add origin https://github.com/unklex/rfst_new.git
+git fetch --depth=1 origin main
+git checkout -f main
+ln -s public public_html
+```
+
+### 2. Install PHP dependencies (no dev packages, optimized autoloader)
+
+```bash
+cd ~/rf-st.ru
 composer install --no-dev --optimize-autoloader --no-interaction
+```
 
-# 3. App key + environment
+If the Beget shell doesn't have `composer` on `$PATH`, use the absolute path Beget gives you, usually `/usr/local/bin/composer` or `~/.composer/bin/composer`. Ask support for the exact location if unsure.
+
+### 3. App key + environment
+
+```bash
 cp .env.example .env
 php artisan key:generate
-# Open .env in your editor and fill in:
-#   APP_URL=https://your-domain.ru
-#   DB_DATABASE / DB_USERNAME / DB_PASSWORD (from Beget panel)
-#   MAIL_USERNAME / MAIL_PASSWORD / MAIL_FROM_ADDRESS (from Beget mailbox)
-#   ADMIN_EMAIL / ADMIN_PASSWORD / ADMIN_NAME (temporary; change after first login)
-nano .env
+```
 
-# 4. Storage symlink (serves uploaded images under /storage/...)
+Open `.env` and fill in:
+
+```
+APP_URL=https://rf-st.ru
+
+DB_CONNECTION=mysql
+DB_HOST=localhost
+DB_PORT=3306
+DB_DATABASE=<beget-db-name>
+DB_USERNAME=<beget-db-user>
+DB_PASSWORD=<beget-db-password>
+
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.beget.com
+MAIL_PORT=465
+MAIL_USERNAME=no-reply@rf-st.ru
+MAIL_PASSWORD=<mailbox-password>
+MAIL_FROM_ADDRESS="no-reply@rf-st.ru"
+
+ADMIN_EMAIL=admin@rf-st.ru
+ADMIN_PASSWORD=<temp-strong-password>
+ADMIN_NAME=Администратор
+```
+
+Save, then:
+
+```bash
+nano .env                 # or: vi .env
+```
+
+### 4. Storage symlink + permissions
+
+```bash
 php artisan storage:link
-
-# 5. Set writable perms on storage + bootstrap/cache
 chmod -R 775 storage bootstrap/cache
-# If Beget complains, try 755 and add the web user to your group, or just 775
+```
 
-# 6. Migrate + seed (all 18 migrations + admin user + 12 content seeders + settings defaults)
+If Beget's `open_basedir` blocks `storage:link`, fall back to a hard copy pipeline (documented in "Common gotchas" at the bottom).
+
+### 5. Run migrations + seed
+
+```bash
 php artisan migrate --force
 php artisan db:seed --force
+```
 
-# 7. Optimize for production
+This creates 18 tables, seeds 20 Settings groups with the exact Russian copy from the prototype, and bootstraps the admin user from `ADMIN_EMAIL`/`ADMIN_PASSWORD`.
+
+### 6. Cache everything for production
+
+```bash
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache
 php artisan event:cache
 php artisan filament:cache-components
-# If Filament isn't registering any hooks, the last one can be skipped
-
-# 8. Verify
-curl -sI https://your-domain.ru/ | head -1
-# → HTTP/2 200
-
-curl -s https://your-domain.ru/admin/login | grep -c 'Криптон'
-# → 2
-
-curl -sI https://your-domain.ru/robots.txt | head -1
-# → HTTP/2 200
+php artisan icons:cache                   # optional, speeds up Heroicons resolution
 ```
 
-Visit `https://your-domain.ru/admin/login` → sign in with `ADMIN_EMAIL`/`ADMIN_PASSWORD` → change the password immediately under *Моя учетная запись*. Paste the Cloudflare Turnstile site key + secret into **Настройки → Интеграции**; paste `notify_email` (the inbox that should receive lead notifications).
+> **Turnstile keys are safe to `config:cache`**. They're read from `IntegrationSettings` at runtime (per the core-decisions doc), not from `env()`.
 
-## Subsequent deploys (pull latest code)
+### 7. Smoke tests
 
 ```bash
-cd ~/public_html/<site>
+curl -sI https://rf-st.ru/ | head -1
+# → HTTP/2 200
 
-# Put the app into maintenance so visitors don't see half-deployed state
+curl -s https://rf-st.ru/admin/login | grep -c 'Криптон'
+# → 2
+
+curl -sI https://rf-st.ru/robots.txt | head -1
+# → HTTP/2 200
+
+php artisan about | grep -E 'Environment|Debug|Url|Database'
+# Expect: production / false / https://rf-st.ru / mysql
+```
+
+### 8. Sign in + lock down
+
+1. Visit `https://rf-st.ru/admin/login`
+2. Sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`
+3. Change the password immediately (*profile → изменить пароль*)
+4. **Настройки → Интеграции**:
+   - `turnstile_site_key` / `turnstile_secret_key` (Cloudflare dashboard → Turnstile → your site)
+   - `notify_email` → the inbox that should receive lead notifications
+   - `yandex_metrika_id` → numeric counter ID (e.g. `12345678`)
+5. **Справочники → Медиа-файлы сайта**: upload `favicon`, `hero_bg`, `og_image`, `about_archive`, `quote_reviewer`
+6. Hit `/` and verify: Turnstile widget appears under the contact form, favicon in the tab, OG preview via [cards-dev.twitter.com/validator](https://cards-dev.twitter.com/validator)
+
+## Subsequent deploys
+
+### On your laptop
+
+```bash
+# ...edit code...
+npm ci                     # first time only, or when package.json changes
+npm run build
+git add -f public/build
+git add -A
+git commit -m "<what changed>"
+git push
+```
+
+### On Beget
+
+```bash
+cd ~/rf-st.ru
+
+# Maintenance page while we swap code
 php artisan down --render="errors::503"
 
 git fetch origin
-git reset --hard origin/main        # use 'main' or whichever branch you deploy
+git reset --hard origin/main
 
 composer install --no-dev --optimize-autoloader --no-interaction
 
@@ -91,109 +202,90 @@ php artisan filament:cache-components
 php artisan up
 ```
 
-**Do NOT run `npm run build` on Beget** — the repo ships prebuilt assets under `public/build`. To rebuild after CSS/JS changes:
-
-```bash
-# --- on your local machine ---
-npm ci
-npm run build
-git add -f public/build
-git commit -m "chore: rebuild vite assets"
-git push
-```
-
-…then pull on the server as above.
-
 ## Queue worker (only if you switch off `QUEUE_CONNECTION=sync`)
 
 For a brochure site with < 100 leads/day, `sync` is fine — mail sends inside the HTTP request. If lead volume grows, switch to `database`:
 
 ```bash
 # 1. Edit .env: QUEUE_CONNECTION=database
-# 2. Create the queue tables (already in Laravel 11 defaults — run once)
-php artisan queue:table
-php artisan queue:failed-table
-php artisan migrate --force
+# 2. Queue tables (Laravel 11 ships them in the stock migration set — already applied)
+# 3. Beget panel → Cron → every minute:
+cd ~/rf-st.ru && /usr/local/bin/php artisan schedule:run >> /dev/null 2>&1
 
-# 3. Add a Beget cron job (Панель → Cron) running every minute:
-cd ~/public_html/<site> && php artisan schedule:run >> /dev/null 2>&1
-
-# 4. Inside routes/console.php (already stock-Laravel) register the worker:
+# 4. In routes/console.php register the worker (Laravel 11 stock):
 #    Schedule::command('queue:work --stop-when-empty --max-time=55')->everyMinute();
 ```
-
-## Scheduled cleanup (optional)
-
-Add a daily cron to clear old sessions + prune the rate-limiter cache:
-
-```bash
-0 3 * * * cd ~/public_html/<site> && php artisan cache:prune-stale-tags >/dev/null 2>&1
-0 4 * * * cd ~/public_html/<site> && php artisan session:prune >/dev/null 2>&1 || true
-```
-
-## Symlink workaround (if Beget won't point the domain at `/public`)
-
-Beget sometimes insists the document root must be `public_html/<site>`. In that case:
-
-```bash
-cd ~/public_html/<site>
-mv public ../<site>-public
-mv ../<site>-public/* ./
-rmdir ../<site>-public
-
-# Rewrite public-path references: edit index.php
-sed -i "s|__DIR__\\.'/../vendor/autoload.php'|__DIR__.'/vendor/autoload.php'|" index.php
-sed -i "s|__DIR__\\.'/../bootstrap/app.php'|__DIR__.'/bootstrap/app.php'|" index.php
-```
-
-Better: **don't do this**. Ask Beget support to set the document root to `/public` — it's a one-time ticket reply.
 
 ## Rollback
 
 ```bash
-cd ~/public_html/<site>
-git log --oneline -10          # find the commit you want to roll back to
+cd ~/rf-st.ru
+git log --oneline -10           # find the commit you want
 git reset --hard <sha>
 composer install --no-dev --optimize-autoloader
-php artisan migrate:rollback   # if the bad deploy added migrations
-php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan event:cache
-```
-
-## What NOT to commit / what NOT to run on Beget
-
-- ❌ Don't commit `.env` (already in `.gitignore`)
-- ❌ Don't commit `database/database.sqlite` (ignored via `database/.gitignore`)
-- ❌ Don't commit uploaded user content from `storage/app/public/*` (ignored)
-- ❌ Don't run `php artisan migrate:fresh` on production — it drops every table including leads
-- ❌ Don't run `php artisan db:seed` on subsequent deploys — it's first-deploy-only; seeders are idempotent but the admin user seeder will log a warning if the row already exists
-
-## Smoke test after first deploy
-
-```
-# on the server
-php artisan about | grep -E 'Environment|Debug|Url|Database|Cache|Queue'
-# Expect: Environment=production, Debug Mode=ENABLED=false, Url=https://..., Database=mysql
-
-php artisan migrate:status | tail -5
-# All migrations Ran
-
-php artisan route:list --path=admin/contact-requests | wc -l
-# 3 routes (index, view, edit) + header line
-
-php artisan tinker --execute="echo app(App\Settings\GeneralSettings::class)->site_name;"
-# → Криптон
+php artisan migrate:rollback    # if the bad deploy added migrations
+php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan event:cache && php artisan filament:cache-components
 ```
 
 ## Disaster-recovery checklist
 
-1. Beget DB backup: *MySQL → [db] → Создать бэкап* weekly (or use their auto-backup)
-2. Mirror `storage/app/public/` to an off-site location weekly — uploaded media lives only there
-3. `.env` is not in git. Keep the password and mail/DB creds in a password manager
+1. Beget DB backup: *MySQL → crypton → Создать бэкап* weekly (or turn on Beget's auto-backup).
+2. Mirror `~/rf-st.ru/storage/app/public/` off-site weekly — uploaded media lives only there.
+3. `.env` is **not** in git. Keep DB + mailbox + admin passwords in a password manager.
+
+## What NOT to commit / what NOT to run on production
+
+- ❌ Don't commit `.env` (already ignored).
+- ❌ Don't commit `database/database.sqlite` (ignored via `database/.gitignore`).
+- ❌ Don't commit uploaded user content from `storage/app/public/*` (ignored).
+- ❌ **Never** run `php artisan migrate:fresh` on production — it drops every table, including leads.
+- ❌ Don't re-run `php artisan db:seed` on subsequent deploys. Seeders are mostly idempotent via `updateOrCreate`, but the admin seeder will no-op and content seeders may flash a warning; safer to skip.
+- ❌ Don't commit `node_modules/` or `vendor/` (both ignored).
 
 ## Common gotchas on Beget
 
-- **"Call to undefined function Spatie\Image\Drivers\Gd\extension_loaded"**: the GD extension isn't enabled in PHP — turn it on in the panel and click *Применить*.
-- **White page / 500**: check `storage/logs/laravel.log`. Usually `.env` missing `APP_KEY` or `storage/` not writable.
-- **`/admin` redirects to `/admin/login` forever**: `SESSION_DOMAIN` in `.env` doesn't match the actual host. Set it to `your-domain.ru` (no scheme, no slash) OR leave it `null`.
-- **Media files 404 after upload**: `php artisan storage:link` didn't run, or Beget's open_basedir blocks the symlink. Fall back to setting `FILESYSTEM_DISK=public` and manually copying `storage/app/public` contents into `public/storage/`.
-- **Emails not arriving**: Beget sometimes rate-limits outbound SMTP. Check *Почта → Журнал отправки*. `MAIL_FROM_ADDRESS` must match the mailbox you created, or they'll bounce SPF.
+- **500 Internal Server Error / blank page**: inspect `storage/logs/laravel.log`. Usually `.env` missing `APP_KEY` or `storage/` perms wrong.
+- **"Call to undefined function gd_info()"**: the GD extension isn't enabled — toggle it in *Сайты → rf-st.ru → PHP → Расширения* and click *Применить*.
+- **`/admin` bounces to `/admin/login` in a loop**: `SESSION_DOMAIN` in `.env` doesn't match. Set it to `rf-st.ru` (no scheme, no slash) OR leave it `null` and let Laravel infer.
+- **Media uploads 404**: `storage:link` didn't run, or Beget's `open_basedir` blocks the symlink. Workaround: set `FILESYSTEM_DISK=public` and manually copy `storage/app/public/*` into `public/storage/` on each upload — ugly, but works. Prefer opening a Beget support ticket to allow the symlink.
+- **Emails not arriving**: Beget rate-limits outbound SMTP. Check *Почта → Журнал отправки*. Make sure `MAIL_FROM_ADDRESS` matches the mailbox you created or SPF will bounce it.
+- **`public_html` exists and is a folder, not a symlink**: you skipped `rm -rf public_html` before creating the symlink. Redo step 1.
+- **Git reset fails with "error: unable to unlink old 'storage/...'"**: storage files have the wrong owner. `chmod -R u+rwX storage bootstrap/cache` and retry.
+- **Composer memory limit**: Beget sometimes caps CLI PHP memory. Prepend `COMPOSER_MEMORY_LIMIT=-1`: `COMPOSER_MEMORY_LIMIT=-1 composer install --no-dev --optimize-autoloader`.
+
+## Copy-paste command bundle (first deploy, one block)
+
+Replace the placeholders, then run top-to-bottom:
+
+```bash
+ssh <user>@<beget-ssh-host>
+
+cd ~
+[ -d rf-st.ru ] && mv rf-st.ru rf-st.ru.$(date +%s).backup
+
+git clone https://github.com/unklex/rfst_new.git rf-st.ru
+cd rf-st.ru
+ln -s public public_html
+
+composer install --no-dev --optimize-autoloader --no-interaction
+
+cp .env.example .env
+php artisan key:generate
+
+echo "--> edit .env now: APP_URL, DB_*, MAIL_*, ADMIN_*"
+nano .env
+
+php artisan storage:link
+chmod -R 775 storage bootstrap/cache
+
+php artisan migrate --force
+php artisan db:seed --force
+
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+php artisan event:cache
+php artisan filament:cache-components
+
+curl -sI https://rf-st.ru/ | head -1
+```
