@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /livewire
+Disallow: /livewire/
+
+# Sitemap lives at the site root once a production URL is configured.
+# Sitemap: https://crypton.example.com/sitemap.xml
