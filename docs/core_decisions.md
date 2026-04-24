@@ -32,6 +32,39 @@ Architectural and scoping decisions, each with the reasoning. Append new decisio
 
 **Trade-off**: loses the queue-retry resilience of the FastAPI job. Accepted — mail failures are rare and logged.
 
+> **Superseded by 2026-04-23 — FastAPI forwarder restored, supersedes.** Kept in history for the reasoning.
+
+---
+
+## 2026-04-23 — FastAPI forwarder restored + Sentry added
+
+**Decision**: port rosecology's `ForwardLeadToFastApiJob` to crypton (dispatched via `dispatch()->afterResponse()` so `QUEUE_CONNECTION=sync` still feels instant) and install `sentry/sentry-laravel`. Supersedes the 2026-04-22 "no external CRM push" decision.
+
+**Alternatives considered**: keep the DB+email-only loop; add a Bitrix24 REST push instead of generic FastAPI.
+
+**Why FastAPI forwarder now**:
+- Client wants leads mirrored to their existing receiver (shared with rosecology's stack); rebuilding per-tenant would be wasted work
+- The rosecology implementation is production-proven — porting is low-risk
+- UTM, consent hash, landing URL forwarding are already baked in — matches the analytics ask
+- `dispatch()->afterResponse()` means the POST fires *after* the HTTP response is flushed, so the user still sees the success panel instantly even with `QUEUE_CONNECTION=sync` (no worker or cron required on Beget shared hosting)
+- Exception-safe inside the job (`handle()` never rethrows): network fails flip status to `failed`, non-2xx from upstream flips to `failed`, 2xx flips to `forwarded`. Admin sees it in the Filament badge and the "Отправить в FastAPI" action resends manually
+
+**Why Sentry now**:
+- Production shared-hosting debugging needs a second channel beyond `storage/logs/laravel.log` (which Beget's SSH exposes but admins don't monitor)
+- DSN read at runtime from `IntegrationSettings::sentry_dsn`, with `env('SENTRY_LARAVEL_DSN')` as fallback — follows the same "runtime-editable, not env()-frozen" pattern as Turnstile
+- sentry-laravel ^4 has auto-discovery and a minimal config.php — zero per-page wiring
+- Wired in `bootstrap/app.php` via `\Sentry\Laravel\Integration::handles($exceptions)` so every unhandled exception plus the `report()` calls inside the forwarder job surface in Sentry automatically
+
+**Trade-off**: adds 4 new columns (`fastapi_status_code`, `fastapi_response`, `forwarded_at`, `external_id`) to `contact_requests`, 2 new enum cases (`Forwarded`, `Failed`), 3 new settings (`fastapi_lead_url`, `fastapi_auth_token`, `sentry_dsn`), and one Jobs class — small scope. Sentry adds a dependency (~25 transitive packages) but it's a mature SDK.
+
+**Implementation**:
+- Migration `2026_04_23_120000_add_fastapi_columns_to_contact_requests.php` + settings migration `2026_04_23_120100_add_fastapi_and_sentry_to_integrations.php`
+- `app/Jobs/ForwardLeadToFastApiJob.php` (port of rosecology, `service_id` removed, `source` derived from `APP_URL` host)
+- `SubmitContactRequestAction` adds `dispatch(new ForwardLeadToFastApiJob($lead->id))->afterResponse()` **after** the Mail dispatch, guarded by `fastapi_lead_url` being non-empty
+- `ContactRequestResource` — new table columns (fastapi_status_code badge, external_id, forwarded_at), infolist section, and "Отправить в FastAPI" row action visible only for `new`/`failed` leads
+- `ManageIntegrationSettings` — adds *FastAPI — приёмник заявок* + *Sentry* sections
+- `AppServiceProvider::register()` — runtime override of `config('sentry.dsn')` from IntegrationSettings with a try/catch around the DB read for pre-migrate safety
+
 ---
 
 ## 2026-04-22 — Every text fragment editable, not just collections

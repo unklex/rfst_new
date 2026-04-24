@@ -11,6 +11,43 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Dates in `YYYY
 
 ---
 
+## [0.7.0] — 2026-04-23 — FastAPI forwarder + Sentry (supersedes Phase 5's "DB+mail only" decision)
+
+### Added
+- `sentry/sentry-laravel ^4` dependency (auto-discovered); `config/sentry.php` published
+- `bootstrap/app.php` — `\Sentry\Laravel\Integration::handles($exceptions)` inside `withExceptions()` so every unhandled exception reports to Sentry automatically
+- `app/Providers/AppServiceProvider::register()` — runtime override of `config('sentry.dsn')` from `IntegrationSettings::sentry_dsn` (admin UI), with `env('SENTRY_LARAVEL_DSN')` as fallback and a try/catch around the DB read for pre-migrate/fresh-install safety
+- `app/Jobs/ForwardLeadToFastApiJob.php` — port of rosecology's forwarder, `service_id` dropped; `source` derived from `parse_url(config('app.url'), PHP_URL_HOST)`; payload includes `lead` (name/phone/email/message/consent hash+accepted_at) and `tracking` (5 UTM fields + referer + landing + ip_hash + user_agent) plus `submitted_at`. Bearer token auth via `IntegrationSettings::fastapi_auth_token` when set. `handle()` is exception-safe: network errors and non-2xx responses flip the lead to `Failed` and `report()` to Sentry — they never bubble up so the Livewire submit flow stays clean even under `QUEUE_CONNECTION=sync`. Async retries (30s/2m/10m backoff) still activate if the queue driver is later switched to `database`/`redis`
+- `app/Filament/Resources/ContactRequestResource.php` — new table columns: `fastapi_status_code` (badge color by HTTP status), `external_id` (copyable, hidden by default), `forwarded_at` (hidden by default). New row action **«Отправить в FastAPI»** — visible only for `new`/`failed` leads when `fastapi_lead_url` is set, dispatches the forwarder via `afterResponse()`. New infolist section **FastAPI / CRM** with status badge + external ID + forwarded_at + KeyValueEntry of the full upstream response
+- `app/Filament/Pages/ManageIntegrationSettings.php` — two new sections: **FastAPI — приёмник заявок** (URL + encrypted Bearer token) and **Sentry (мониторинг ошибок)** (DSN override with Russian helper text explaining the env fallback chain)
+- `database/migrations/2026_04_23_120000_add_fastapi_columns_to_contact_requests.php` — adds `fastapi_status_code` (unsignedSmallInteger, nullable), `fastapi_response` (json, nullable), `forwarded_at` (timestamp, nullable), `external_id` (string 64, nullable, indexed)
+- `database/settings/2026_04_23_120100_add_fastapi_and_sentry_to_integrations.php` — seeds `fastapi_lead_url`, `fastapi_auth_token` (encrypted), `sentry_dsn` as null defaults
+- `.env.example` — `SENTRY_LARAVEL_DSN=` placeholder + `SENTRY_ENVIRONMENT=production`, with Russian comments clarifying the Settings-first priority chain
+- `docs/core_decisions.md` — new dated entry **"2026-04-23 — FastAPI forwarder restored + Sentry added"**, supersedes the 2026-04-22 "no external CRM push" decision (kept in history for the reasoning trail)
+
+### Changed
+- `app/Enums/ContactRequestStatus.php` — two new cases: `Forwarded` (label «Отправлена», color `info`), `Failed` (label «Ошибка», color `danger`). Existing `New` and `Handled` unchanged
+- `app/Models/ContactRequest.php` — fillable + casts extended with `fastapi_status_code`, `fastapi_response` (array), `forwarded_at` (datetime), `external_id`
+- `app/Settings/IntegrationSettings.php` — adds `fastapi_lead_url`, `fastapi_auth_token` (encrypted), `sentry_dsn` as public nullable strings. `encrypted()` list now returns `['turnstile_secret_key', 'fastapi_auth_token']`
+- `app/Actions/Contact/SubmitContactRequestAction.php` — after the Mail dispatch, if `fastapi_lead_url` is non-empty, dispatches `ForwardLeadToFastApiJob($lead->id)` via `->afterResponse()`. Preserves the exact same user-facing UX (success panel flips instantly) — the POST fires in the after-response hook, invisible to the submitter
+
+### Verified
+- `php -l` on all 11 new/changed PHP files: no syntax errors
+- `composer require sentry/sentry-laravel:^4 --no-interaction` — installs cleanly; `vendor:publish --provider='Sentry\Laravel\ServiceProvider'` lands `config/sentry.php`
+- `php artisan migrate --force` — 2 new migrations apply cleanly (33 ms schema, 27 ms settings)
+- Schema check: 4 new columns present on `contact_requests` (`fastapi_status_code`, `fastapi_response`, `forwarded_at`, `external_id`)
+- Settings check: `integrations.fastapi_lead_url`, `integrations.fastapi_auth_token`, `integrations.sentry_dsn` present in the `settings` table
+- Enum check: 4 cases, each resolves to its Russian label + Filament color
+- Forwarder happy path (via `Http::fake` → 201 with `{external_id: 'CRM-42'}`): lead's `status` flips `new → forwarded`, `fastapi_status_code = 201`, `forwarded_at` set, `external_id = 'CRM-42'`. Bearer token present in outbound `Authorization` header. Payload includes `source` (from `APP_URL` host), full lead block with consent hash + accepted_at, and `tracking` block with `utm_source`, `utm_campaign`, `utm_content`, `utm_term`, `utm_medium`, `referer`, `landing_url`, `ip_hash`, `user_agent`
+- Forwarder failure path (via `Http::fake` → 500): lead's `status` flips `new → failed`, `fastapi_status_code = 500`, `fastapi_response` contains the upstream body, `forwarded_at` stays null. No exception propagates
+- Forwarder with no URL configured → early return, lead stays `new` — no side effects
+- `ContactRequestResource::table` shows 3 new columns; «Отправить в FastAPI» row action is visible on `new`/`failed` leads with a URL configured, hidden otherwise
+- `ManageIntegrationSettings` form renders the new FastAPI + Sentry sections without errors
+
+### Note
+- `QUEUE_CONNECTION=sync` + `dispatch()->afterResponse()` is the combo that lets this work on Beget without a queue worker — the forwarder POST runs inside the same PHP-FPM process, *after* the response is flushed to the browser, using Laravel's `app->terminating()` hook. Zero cron setup needed
+- Sentry SDK is a no-op when DSN is null — no network calls, no exceptions, no latency. Safe to deploy before pasting a real DSN into the admin UI
+
 ## [0.6.0] — 2026-04-23 — Phase 6: media pipeline + SEO tags
 
 ### Added

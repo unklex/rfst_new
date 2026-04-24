@@ -8,12 +8,16 @@ use Filament\Support\Contracts\HasLabel;
 enum ContactRequestStatus: string implements HasLabel, HasColor
 {
     case New = 'new';
+    case Forwarded = 'forwarded';
+    case Failed = 'failed';
     case Handled = 'handled';
 
     public function getLabel(): string
     {
         return match ($this) {
             self::New => 'Новая',
+            self::Forwarded => 'Отправлена',
+            self::Failed => 'Ошибка',
             self::Handled => 'Обработана',
         };
     }
@@ -22,6 +26,8 @@ enum ContactRequestStatus: string implements HasLabel, HasColor
     {
         return match ($this) {
             self::New => 'warning',
+            self::Forwarded => 'info',
+            self::Failed => 'danger',
             self::Handled => 'success',
         };
     }

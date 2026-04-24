@@ -6,8 +6,11 @@ namespace App\Filament\Resources;
 
 use App\Enums\ContactRequestStatus;
 use App\Filament\Resources\ContactRequestResource\Pages;
+use App\Jobs\ForwardLeadToFastApiJob;
 use App\Models\ContactRequest;
 use App\Settings\ContactSettings;
+use App\Settings\IntegrationSettings;
+use Filament\Notifications\Notification;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Section;
@@ -141,6 +144,21 @@ class ContactRequestResource extends Resource
                     }),
             ])->columns(2),
 
+            InfoSection::make('FastAPI / CRM')->schema([
+                TextEntry::make('fastapi_status_code')
+                    ->label('HTTP статус')
+                    ->badge()
+                    ->color(fn (?int $state): string => match (true) {
+                        $state === null => 'gray',
+                        $state >= 200 && $state < 300 => 'success',
+                        default => 'danger',
+                    })
+                    ->placeholder('—'),
+                TextEntry::make('external_id')->label('Внешний ID')->copyable()->placeholder('—'),
+                TextEntry::make('forwarded_at')->label('Отправлена')->dateTime('d.m.Y H:i:s')->placeholder('—'),
+                KeyValueEntry::make('fastapi_response')->label('Ответ FastAPI')->columnSpanFull(),
+            ])->columns(3)->collapsed(),
+
             InfoSection::make('Трекинг')->schema([
                 KeyValueEntry::make('utm')->label('UTM')->columnSpanFull(),
                 TextEntry::make('referer_url')->label('Referer')->copyable()->placeholder('—'),
@@ -172,6 +190,27 @@ class ContactRequestResource extends Resource
                     ->getStateUsing(fn (ContactRequest $r): ?string => $r->utm['utm_campaign'] ?? null)
                     ->toggleable()
                     ->placeholder('—'),
+                TextColumn::make('fastapi_status_code')
+                    ->label('FastAPI')
+                    ->toggleable()
+                    ->placeholder('—')
+                    ->badge()
+                    ->color(fn (?int $state): string => match (true) {
+                        $state === null => 'gray',
+                        $state >= 200 && $state < 300 => 'success',
+                        default => 'danger',
+                    }),
+                TextColumn::make('external_id')
+                    ->label('Внешний ID')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->searchable()
+                    ->copyable()
+                    ->placeholder('—'),
+                TextColumn::make('forwarded_at')
+                    ->label('Отправлена')
+                    ->dateTime('d.m.Y H:i')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->placeholder('—'),
                 TextColumn::make('handled_at')->label('Обработана')->dateTime('d.m.Y H:i')->toggleable()->placeholder('—'),
             ])
             ->defaultSort('created_at', 'desc')
@@ -185,6 +224,23 @@ class ContactRequestResource extends Resource
             ->actions([
                 ViewAction::make(),
                 EditAction::make(),
+                Action::make('resend_fastapi')
+                    ->label('Отправить в FastAPI')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->visible(fn (ContactRequest $r): bool => in_array($r->status, [
+                        ContactRequestStatus::New,
+                        ContactRequestStatus::Failed,
+                    ], true) && !empty(app(IntegrationSettings::class)->fastapi_lead_url))
+                    ->action(function (ContactRequest $r): void {
+                        dispatch(new ForwardLeadToFastApiJob($r->id))->afterResponse();
+                        Notification::make()
+                            ->title('Заявка отправлена в очередь')
+                            ->body('Результат появится через несколько секунд — обновите список.')
+                            ->success()
+                            ->send();
+                    }),
                 Action::make('mark_handled')
                     ->label('Отметить обработанной')
                     ->icon('heroicon-o-check')

@@ -2,12 +2,12 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\BustsSettingsCache;
 use App\Settings\IntegrationSettings;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
 use Filament\Pages\SettingsPage;
-use App\Filament\Concerns\BustsSettingsCache;
 
 class ManageIntegrationSettings extends SettingsPage
 {
@@ -48,6 +48,31 @@ class ManageIntegrationSettings extends SettingsPage
                     ->helperText('На этот адрес дублируется каждая новая заявка. Пусто → рассылка выключена.'),
             ]),
 
+            Section::make('FastAPI — приёмник заявок')
+                ->description('При каждой новой заявке POST с JSON-пейлоадом отправляется на указанный URL после ответа пользователю (dispatch()->afterResponse(), не блокирует форму). Пусто → forward выключен, заявки только сохраняются в админке.')
+                ->schema([
+                    TextInput::make('fastapi_lead_url')
+                        ->label('URL endpoint')
+                        ->url()
+                        ->maxLength(400)
+                        ->placeholder('https://api.example.com/leads'),
+                    TextInput::make('fastapi_auth_token')
+                        ->label('Bearer-токен (опц.)')
+                        ->password()
+                        ->revealable()
+                        ->maxLength(300)
+                        ->helperText('Шифруется в БД. Если указан — добавляется в заголовок Authorization: Bearer.'),
+                ])->columns(1),
+
+            Section::make('Sentry (мониторинг ошибок)')
+                ->description('DSN из проекта Sentry. Если пусто — SDK работает как no-op, ошибки идут только в storage/logs/laravel.log. Приоритет: это поле → переменная окружения SENTRY_LARAVEL_DSN.')
+                ->schema([
+                    TextInput::make('sentry_dsn')
+                        ->label('DSN')
+                        ->maxLength(400)
+                        ->placeholder('https://<ключ>@sentry.io/<project-id>'),
+                ]),
+
             Section::make('Яндекс.Метрика')->schema([
                 TextInput::make('yandex_metrika_id')
                     ->label('Номер счётчика')
@@ -57,5 +82,4 @@ class ManageIntegrationSettings extends SettingsPage
             ]),
         ]);
     }
-
 }

@@ -13,6 +13,7 @@ class ContactRequest extends Model
         'utm', 'referer_url', 'landing_url',
         'ip_hash', 'user_agent',
         'status', 'handled_at',
+        'fastapi_status_code', 'fastapi_response', 'forwarded_at', 'external_id',
     ];
 
     protected $casts = [
@@ -20,5 +21,7 @@ class ContactRequest extends Model
         'consent_accepted' => 'boolean',
         'status' => ContactRequestStatus::class,
         'handled_at' => 'datetime',
+        'fastapi_response' => 'array',
+        'forwarded_at' => 'datetime',
     ];
 }

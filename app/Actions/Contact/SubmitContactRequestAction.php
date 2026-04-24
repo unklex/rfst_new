@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Contact;
 
 use App\Enums\ContactRequestStatus;
+use App\Jobs\ForwardLeadToFastApiJob;
 use App\Mail\NewContactRequestMail;
 use App\Models\ContactRequest;
 use App\Settings\ContactSettings;
@@ -81,6 +82,18 @@ final class SubmitContactRequestAction
         $to = $this->integrationSettings->notify_email;
         if (is_string($to) && $to !== '') {
             Mail::to($to)->queue(new NewContactRequestMail($lead));
+        }
+
+        // Forward to the FastAPI / CRM receiver (if configured).
+        //
+        // afterResponse() defers the HTTP POST until after the response has
+        // been flushed — so the user sees the success panel instantly, and
+        // a slow upstream doesn't block the request. Exception-safe inside
+        // the job: failures flip status to Failed and report to Sentry,
+        // they never bubble into the Livewire submit flow.
+        $fastApiUrl = $this->integrationSettings->fastapi_lead_url;
+        if (is_string($fastApiUrl) && $fastApiUrl !== '') {
+            dispatch(new ForwardLeadToFastApiJob($lead->id))->afterResponse();
         }
 
         return $lead;

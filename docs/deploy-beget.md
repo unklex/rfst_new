@@ -160,8 +160,10 @@ php artisan about | grep -E 'Environment|Debug|Url|Database'
    - `turnstile_site_key` / `turnstile_secret_key` (Cloudflare dashboard → Turnstile → your site)
    - `notify_email` → the inbox that should receive lead notifications
    - `yandex_metrika_id` → numeric counter ID (e.g. `12345678`)
+   - `fastapi_lead_url` / `fastapi_auth_token` → external CRM/receiver endpoint (if any) + optional Bearer token. Empty = forwarding disabled, leads only in DB + mail
+   - `sentry_dsn` → DSN from Sentry project settings (overrides `SENTRY_LARAVEL_DSN` in `.env`). Empty = no-op
 5. **Справочники → Медиа-файлы сайта**: upload `favicon`, `hero_bg`, `og_image`, `about_archive`, `quote_reviewer`
-6. Hit `/` and verify: Turnstile widget appears under the contact form, favicon in the tab, OG preview via [cards-dev.twitter.com/validator](https://cards-dev.twitter.com/validator)
+6. Hit `/` and verify: Turnstile widget appears under the contact form, favicon in the tab, OG preview via [cards-dev.twitter.com/validator](https://cards-dev.twitter.com/validator). Submit a test lead → check it lands in `/admin/contact-requests` → if FastAPI URL is configured, status should flip to **«Отправлена»** within a few seconds (afterResponse hook fires the POST in the background)
 
 ## Subsequent deploys
 
