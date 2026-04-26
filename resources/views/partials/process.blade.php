@@ -7,8 +7,8 @@
         <x-section-head
             idx="{{ $s->section_index }}"
             kicker="{{ $s->section_kicker }}"
-            heading-html="{{ $s->section_heading_html }}"
-            note-html="{{ $s->section_note_html }}"
+            :heading-html="$s->section_heading_html"
+            :note-html="$s->section_note_html"
         />
     </div>
 

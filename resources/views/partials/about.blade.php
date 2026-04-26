@@ -9,8 +9,8 @@
         <x-section-head
             idx="{{ $about->section_index }}"
             kicker="{{ $about->section_kicker }}"
-            heading-html="{{ $about->section_heading_html }}"
-            note-html="{{ $about->legal_block_html }}"
+            :heading-html="$about->section_heading_html"
+            :note-html="$about->legal_block_html"
         />
     </div>
 
