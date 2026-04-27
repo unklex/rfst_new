@@ -20,7 +20,7 @@
                     <div class="px">{!! $plan->price_main !!}<sup>{{ $plan->price_suffix }}</sup><small>{{ $plan->price_caption }}</small></div>
                     <ul>
                         @foreach ($plan->features ?? [] as $f)
-                            <li>{{ $f }}</li>
+                            <li>{{ is_array($f) ? ($f['text'] ?? '') : $f }}</li>
                         @endforeach
                     </ul>
                     <div class="bt"><a href="{{ $plan->cta_url }}" class="btn">{{ $plan->cta_label }} <span class="arr">→</span></a></div>

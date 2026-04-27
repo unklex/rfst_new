@@ -14,4 +14,15 @@ class EditPlan extends EditRecord
     {
         return [DeleteAction::make()];
     }
+
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        if (isset($data['features']) && is_array($data['features'])) {
+            $data['features'] = array_values(array_map(
+                fn ($i) => is_array($i) ? (string) ($i['text'] ?? '') : (string) $i,
+                $data['features']
+            ));
+        }
+        return $data;
+    }
 }
