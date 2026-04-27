@@ -11,6 +11,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Dates in `YYYY
 
 ---
 
+## [0.7.1] — 2026-04-27 — Hotfix: section-head HTML props + Plan repeater shape
+
+### Fixed
+- **Six landing-page partials** (`about`, `services`, `industries`, `waste`, `process`, `plans`) passed HTML-bearing settings to `<x-section-head>` via `heading-html="{{ $s->section_heading_html }}"`. Blade's `{{ }}` HTML-escapes the value before it reaches the component, so the inner `{!! !!}` rendered an already-encoded string and `<em>`, `<b>`, `<br>` tags appeared as literal text on the page (e.g. the §01 about heading showed `<em>управлению отходами</em>` and the legal block showed `<b>ООО «Криптон»</b>`). Switched all 12 attribute bindings (`heading-html` + `note-html`/`legal_block_html` × 6 partials) to the `:heading-html="..."` PHP-expression syntax so the raw HTML is forwarded to the component unchanged. Commit `534cf79`
+- **`plans.blade.php` 500 on production** — `htmlspecialchars(): Argument #1 ($string) must be of type string, array given`. Cause: the `PlanResource` Filament `Repeater` for `features` has a single `text` subfield with a `dehydrateStateUsing` flattener, but on certain admin save paths the dehydrator doesn't fire and the DB ends up with `[{"text":"Foo"}, ...]` instead of the flat `["Foo", ...]` the blade expects. Two-layer fix: (a) blade now tolerates both shapes via `{{ is_array($f) ? ($f['text'] ?? '') : $f }}` so the page can never 500 from a bad row; (b) `EditPlan::mutateFormDataBeforeSave` and `CreatePlan::mutateFormDataBeforeCreate` flatten `features` one more time before the model is touched, belt-and-suspenders for the dehydrator path. Commit `ccb7cf6`
+
+### Verified
+- `https://rf-st.ru/` returns `HTTP/2 200` after deploying both commits + `php artisan view:clear && php artisan view:cache` on Beget
+- §01 about heading renders italics correctly; legal block on the right renders `<b>` + `<br>` correctly
+- Plans section bullets render without 500 regardless of whether existing rows hold flat strings or wrapped `{text: ...}` arrays
+- Future admin saves of a Plan re-flatten `features` to plain strings before persistence (verified in form lifecycle hooks)
+
+### Note
+- Filament `RichEditor` wraps content in `<p>...</p>` on save, which means future admin edits of `section_heading_html` will produce `<h2><p>...</p></h2>` — invalid HTML but not a 500. Cosmetic cleanup deferred until someone actually edits a heading via the panel and notices the layout shift
+- Existing DB rows with the wrapped `[{"text": ...}]` shape were left in place — the defensive blade renders them correctly. A one-shot tinker normaliser is documented in the deploy notes if a clean migration is wanted later
+
+---
+
 ## [0.7.0] — 2026-04-23 — FastAPI forwarder + Sentry (supersedes Phase 5's "DB+mail only" decision)
 
 ### Added
