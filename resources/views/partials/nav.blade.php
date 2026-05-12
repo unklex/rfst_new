@@ -17,6 +17,9 @@
         <div class="cta">
             <div class="phone"><small>{{ $nav->phone_label }}</small>{{ $nav->phone_number }}</div>
             <a href="#contact" class="btn">{{ $nav->primary_cta_label }} <span class="arr">→</span></a>
+            <label for="nav-toggle" class="nav-burger" aria-label="Открыть меню" aria-controls="mobile-drawer">
+                <span></span><span></span><span></span>
+            </label>
         </div>
     </div></div>
 </nav>

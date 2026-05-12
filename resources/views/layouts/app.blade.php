@@ -86,6 +86,8 @@
 </head>
 <body data-signal="{{ $design->signal }}" data-paper="{{ $design->paper }}" data-head_weight="{{ $design->head_weight }}">
 
+@include('partials.mobile-drawer')
+
 @yield('content')
 
 @livewireScripts
