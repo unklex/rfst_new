@@ -24,7 +24,8 @@ class ContactForm extends Component
             'name.max' => 'Имя слишком длинное.',
         ],
     )]
-    public string $name = '';
+    /** @var string */
+    public $name = '';
 
     #[Validate(
         rule: [
@@ -39,7 +40,8 @@ class ContactForm extends Component
             'phone.max' => 'Слишком длинный номер телефона.',
         ],
     )]
-    public string $phone = '';
+    /** @var string */
+    public $phone = '';
 
     #[Validate(
         rule: ['required', 'string', 'max:120', 'email:rfc'],
@@ -49,7 +51,8 @@ class ContactForm extends Component
             'email.max' => 'E-mail слишком длинный.',
         ],
     )]
-    public string $email = '';
+    /** @var string */
+    public $email = '';
 
     #[Validate(
         rule: ['required', 'string', 'min:10', 'max:2000'],
@@ -59,23 +62,30 @@ class ContactForm extends Component
             'message.max' => 'Сообщение слишком длинное (максимум 2000 символов).',
         ],
     )]
-    public string $message = '';
+    /** @var string */
+    public $message = '';
 
     #[Validate(
         rule: ['accepted'],
         message: ['consent.accepted' => 'Нужно согласиться с обработкой персональных данных.'],
     )]
-    public bool $consent = true;
+    /** @var bool */
+    public $consent = true;
 
-    public string $turnstileToken = '';
+    /** @var string */
+    public $turnstileToken = '';
 
     /** Honeypot — must stay empty. */
-    public string $website = '';
+    public $website = '';
 
-    public string $landingUrl = '';
+    /** @var string */
+    public $landingUrl = '';
 
-    public bool $submitted = false;
-    public ?string $error = null;
+    /** @var bool */
+    public $submitted = false;
+
+    /** @var string|null */
+    public $error = null;
 
     public function mount(Request $request): void
     {
@@ -97,9 +107,9 @@ class ContactForm extends Component
     }
 
     #[On('turnstile-verified')]
-    public function setTurnstileToken(string $token): void
+    public function setTurnstileToken(mixed $token): void
     {
-        $this->turnstileToken = $token;
+        $this->turnstileToken = is_string($token) ? $token : '';
     }
 
     public function submit(SubmitContactRequestAction $action, Request $request): void
@@ -116,7 +126,7 @@ class ContactForm extends Component
 
         // Honeypot: silent success. Don't let bots learn why the submission was dropped.
         // Also don't count against rate limit — we haven't "hit" anything.
-        if ($this->website !== '') {
+        if (! is_string($this->website) || $this->website !== '') {
             $this->submitted = true;
 
             return;
@@ -124,18 +134,18 @@ class ContactForm extends Component
 
         RateLimiter::hit($ipKey, 600); // 5 / 10 min window
 
-        $this->validate();
+        $validated = $this->validate();
 
         try {
             ($action)([
-                'name' => $this->name,
-                'phone' => $this->phone,
-                'email' => $this->email,
-                'message' => $this->message,
-                'consent_accepted' => $this->consent,
-                'turnstile_token' => $this->turnstileToken,
-                'website' => $this->website,
-                'landing_url' => $this->landingUrl,
+                'name' => (string) $validated['name'],
+                'phone' => (string) $validated['phone'],
+                'email' => (string) $validated['email'],
+                'message' => (string) $validated['message'],
+                'consent_accepted' => (bool) $validated['consent'],
+                'turnstile_token' => is_string($this->turnstileToken) ? $this->turnstileToken : '',
+                'website' => '',
+                'landing_url' => is_string($this->landingUrl) ? $this->landingUrl : '',
             ], $request);
         } catch (\DomainException $e) {
             // Honeypot catch is a belt-and-braces — the action also checks.

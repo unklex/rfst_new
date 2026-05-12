@@ -11,7 +11,7 @@
         </div>
     @else
         <form wire:submit.prevent="submit" autocomplete="on" novalidate>
-            @if ($error)
+            @if (is_string($error) && $error !== '')
                 <div class="field-err" role="alert" style="margin-bottom:4px">{{ $error }}</div>
             @endif
 
