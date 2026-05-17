@@ -112,4 +112,24 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Admin magic-link login
+    |--------------------------------------------------------------------------
+    |
+    | `email`      — allowlisted recipient address. Only requests for this
+    |                exact address produce a delivered email; everything else
+    |                returns the same neutral "sent" page (no enumeration).
+    | `user_email` — DB user that the magic link logs in. Decoupled from the
+    |                recipient so the link can be sent to a personal mailbox
+    |                while the seeded admin row keeps its local address.
+    | `ttl_minutes`— token validity. Single-use is enforced via Cache::pull.
+    |
+    */
+    'magic_link' => [
+        'email' => env('ADMIN_MAGIC_LINK_EMAIL'),
+        'user_email' => env('ADMIN_EMAIL'),
+        'ttl_minutes' => (int) env('ADMIN_MAGIC_LINK_TTL_MINUTES', 15),
+    ],
+
 ];
