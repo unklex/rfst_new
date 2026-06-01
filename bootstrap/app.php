@@ -20,4 +20,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // → env('SENTRY_LARAVEL_DSN') → null (→ no-op). Runtime override lives in
         // App\Providers\AppServiceProvider::register().
         \Sentry\Laravel\Integration::handles($exceptions);
+
+        // Bots probe /livewire/update with arbitrary component names. Return 404
+        // instead of 500 and skip Sentry reporting — nothing actionable here.
+        $exceptions->dontReport(\Livewire\Exceptions\ComponentNotFoundException::class);
+        $exceptions->render(function (\Livewire\Exceptions\ComponentNotFoundException $e) {
+            return response()->json(['message' => 'Not Found'], 404);
+        });
     })->create();
