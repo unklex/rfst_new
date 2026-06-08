@@ -47,4 +47,15 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return null; // fall through to default rendering
         });
+
+        // Livewire verifies a checksum over each component's [name, id, data] snapshot.
+        // Bots replaying/tampering with /livewire/update payloads — and genuinely stale
+        // browser tabs — fail that check and throw CorruptComponentPayloadException.
+        // 0 real users affected. Skip Sentry reporting and return 419 (Page Expired):
+        // Livewire's client treats 419 as a session-expired signal and prompts a refresh,
+        // so a real stale tab recovers gracefully instead of hard-failing.
+        $exceptions->dontReport(\Livewire\Mechanisms\HandleComponents\CorruptComponentPayloadException::class);
+        $exceptions->render(function (\Livewire\Mechanisms\HandleComponents\CorruptComponentPayloadException $e) {
+            return response()->json(['message' => 'Page Expired'], 419);
+        });
     })->create();
